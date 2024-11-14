@@ -4,12 +4,14 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_appauth/flutter_appauth.dart';
+import 'package:flutter_compass/flutter_compass.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_polyline_points/flutter_polyline_points.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:logger/logger.dart';
+import 'package:map_test_opensteeat/lerp_lat_long.dart';
 import 'package:map_test_opensteeat/map_models/reverse_search_model.dart';
 import 'package:map_test_opensteeat/map_models/route_model.dart';
 
@@ -34,9 +36,10 @@ class MapScreen extends StatefulWidget {
   _MapScreenState createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin{
   //
   MapController mapController = MapController();
+  LatLng? currentLocation;
   LatLng? startLocation;
   LatLng? endLocation;
   LatLng? latLng;
@@ -50,6 +53,15 @@ class _MapScreenState extends State<MapScreen> {
 
   static const double pointSize = 65;
   static const double pointY = 250;
+  double? heading;
+
+  bool isStartingSearch = false;
+  dynamic setOnMap = false;
+
+  late AnimationController _animationController;
+  late Tween<LatLng> _positionTween;
+  Animation<LatLng>? _positionAnimation;
+
 
 
 
@@ -85,9 +97,9 @@ class _MapScreenState extends State<MapScreen> {
 
       // Update the UI with the current location
       setState(() {
-        startLocation = LatLng(position.latitude, position.longitude);
+        currentLocation = LatLng(position.latitude, position.longitude);
       });
-      print("start location....${startLocation}");
+      print("start currentLocation....${currentLocation}");
       //LatLng(latitude:37.421998, longitude:-122.084)
 
     //  startLocation = LatLng(latitude, longitude);
@@ -101,340 +113,11 @@ class _MapScreenState extends State<MapScreen> {
       // );
       //
       print("User's current location: ${position.latitude}, ${position.longitude}");
-      _startLocationTracking();
+      //_startLocationTracking();
     } catch (e) {
       print("Error getting location: $e");
     }
   }
-
-
-
-  // //valhalla
-  // Future<void> _fetchRoute(LatLng start, LatLng end) async {
-  //   // Choose vehicle type: foot, car, bike
-  //   String vehicle = "pedestrian";
-  //   int maxDistance = 10; // Adjust this distance for more/less detailed route points
-  //
-  //   //  //https://valhalla.openstreetmap.de/directions?profile=bicycle
-  //
-  //   //https://valhalla.openstreetmap.de/directions?profile=pedestrian&wps=90.4211957%2C23.7272598%2C90.3871113%2C23.7590394
-  //
-  //   final url = Uri.parse(
-  //     'https://valhalla.openstreetmap.de/directions?profile=$vehicle',
-  //   );
-  //
-  //   print("Route URL: $url");
-  //
-  //   final response = await http.get(url);
-  //   print("Route response: ${response.body}");
-  //
-  //   if (response.statusCode == 200) {
-  //     final data = json.decode(response.body);
-  //     final points = data['paths'][0]['points']['coordinates']; // Access unencoded coordinates
-  //
-  //     // Convert coordinates to a list of LatLng points
-  //     setState(() {
-  //       routePoints = points.map<LatLng>((point) => LatLng(point[1], point[0])).toList();
-  //     });
-  //   } else {
-  //     print('Failed to fetch route');
-  //   }
-  // }
-
-  Future<List<Map<String, dynamic>>> fetchLocationSuggestions(String query) async {
-    final url = Uri.parse(
-      'https://graphhopper.com/api/1/geocode?q=$query&limit=5&locale=en&key=$apiKey',
-    );
-
-    final response = await http.get(url);
-  //  print("reponse...${response.body}");
-    final data = json.decode(response.body);
-    print("reponse...${data["hits"]}");
-    
-    for(var item in data["hits"]){
-      print("reponse...${item}");
-    }
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      List<Map<String, dynamic>> results = [];
-
-      // Parse the response and get matching locations
-      for (var item in data['hits']) {
-        results.add({
-          'name': item['name'],
-          'lat': item['point']['lat'],
-          'lon': item['point']['lng'],
-          'address': item['street'] ?? '' // Use other fields as needed
-        });
-      }
-      return results;
-    } else {
-      throw Exception('Failed to fetch location suggestions');
-    }
-  }
-
-
-  Future<void> fetchValhallaRoute({ LatLng? start}) async {
-    print("ts.....");
-   // final url = Uri.parse('http://localhost:8002/route?json={"locations":[{"lat":${start.latitude},"lon":${start.longitude}}],"costing":"auto","directions_options":{"units":"kilometers"}}');
-    final url = Uri.parse('http://192.168.0.106:8002/route?json={"locations":[{"lat":51.50799,"lon":-0.08008},{"lat":51.505517,"lon":-0.075367}],"costing":"auto","directions_options":{"units":"kilometers"}}');
-   // final url = Uri.parse('http://192.168.0.1:8002/route?json={"locations":[{"lat":23.777176,"lon":90.399452}],"costing":"auto","directions_options":{"units":"kilometers"}}');
- //   print("url...$url");
-
-    final response = await http.get(url);
-    print("response...${response.body}");
-
-
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final List<dynamic> shape = data['trip']['legs'][0]['shape'];
-
-      return ;
-    } else {
-      throw Exception('Failed to fetch route');
-    }
-  }
-
-
-
-
-
-  Future<void> addAddressToOSM() async {
-    // Your authentication token here (OAuth required)
-    final String oauthToken = 'YOUR_OAUTH_TOKEN';
-
-    // Example address data (you may need more fields based on what you want to add)
-    final Map<String, String> addressData = {
-      'lat': '52.5200', // latitude of the address
-      'lon': '13.4050', // longitude of the address
-      'address': 'Your address name here', // Example address
-      // other relevant OSM node data
-    };
-
-    final Uri url = Uri.parse('https://api.openstreetmap.org/api/0.6/node/create');
-
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $oauthToken', // Authorization header with OAuth token
-      },
-      body: json.encode(addressData),
-    );
-
-    if (response.statusCode == 200) {
-      print('Address added successfully');
-    } else {
-      print('Failed to add address: ${response.statusCode}');
-    }
-  }
-
-
-  // Future<void> _fetchRoute(LatLng start, LatLng end) async {
-  //   // Construct the URL with start and end coordinates, and vehicle type
-  //   String vehicle = "pedestrian";
-  //   // final url = Uri.parse(
-  //   //     'https://valhalla.openstreetmap.de/directions?'
-  //   //         'profile=$vehicle&'
-  //   //         'point=${startLocation!.longitude},${startLocation!.latitude},${endLocation!.longitude},${endLocation!.latitude}'
-  //   // );
-  //
-  //   final url = Uri.parse(
-  //       'https://valhalla.openstreetmap.de/valhalla/directions?profile=$vehicle&wps=${start.longitude},${start.latitude},${end.longitude},${end.latitude}'
-  //   );
-  //
-  //
-  //   print("Route URL: $url");
-  //
-  //   final response = await http.get(url);
-  //   print("Route response: ${response.body}");
-  //
-  //   if (response.statusCode == 200) {
-  //     final data = json.decode(response.body);
-  //     final coordinates = data['trip']['legs'][0]['shape'];
-  //
-  //     PolylinePoints polylinePoints = PolylinePoints();
-  //     List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(coordinates);
-  //
-  //     setState(() {
-  //       routePoints = decodedPoints.map((point) => LatLng(point.latitude, point.longitude)).toList();
-  //     });
-  //     // Do something with routePoints, like updating the UI
-  //     print('Route Points: $routePoints');
-  //   } else {
-  //     print('Failed to fetch route: ${response.statusCode}');
-  //   }
-  // }
-
-  // Future<void> _fetchRoute(/*LatLng start, LatLng end*/) async {
-  //   // Construct the URL with start and end coordinates, and vehicle type
-  //   String vehicle = "pedestrian";
-  //   // final url = Uri.parse(
-  //   //     'https://valhalla.openstreetmap.de/directions?'
-  //   //         'profile=$vehicle&'
-  //   //         'point=${startLocation!.longitude},${startLocation!.latitude},${endLocation!.longitude},${endLocation!.latitude}'
-  //   // );
-  //
-  //   final url = Uri.parse(
-  //       'https://valhalla1.openstreetmap.de/route?json={"locations":[{"options":{"allowUTurn":false},"latLng":{"lat":23.734990618115763,"lng":90.4174661631987},"_initHooksCalled":true,"lat":23.734990618115763,"lon":90.4174661631987}],"costing":"$vehicle","directions_options":{"language":"en-US"}}&access_token='
-  //   );
-  //
-  //
-  //   //https://valhalla1.openstreetmap.de/route?json={"locations":[{"options":{"allowUTurn":false},"latLng":{"lat":40.814328907637126,"lng":-74.22168732038699},"_initHooksCalled":true,"lat":40.814328907637126,"lon":-74.22168732038699},{"options":{"allowUTurn":false},"latLng":{"lat":40.761300880922235,"lng":-74.08229828230105},"_initHooksCalled":true,"lat":40.761300880922235,"lon":-74.08229828230105}],"costing":"auto","directions_options":{"language":"en-US"}}&access_token=
-  //
-  //   print("Route URL: $url");
-  //
-  //   final response = await http.get(url);
-  //   //print("Route response: ${response.body}");
-  //
-  //   if (response.statusCode == 200) {
-  //     final data = json.decode(response.body);
-  //     final coordinates = data['trip']['legs'][0]['shape'];
-  //     print("coordinates...${coordinates}");
-  //
-  //     PolylinePoints polylinePoints = PolylinePoints();
-  //     List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(coordinates);
-  //
-  //     setState(() {
-  //       routePoints = decodedPoints.map((point) => LatLng(point.latitude, point.longitude)).toList();
-  //     });
-  //
-  //     mapController.move(routePoints.first, 12);
-  //     // Do something with routePoints, like updating the UI
-  //     // print('Route Points: $routePoints');
-  //   } else {
-  //     print('Failed to fetch route: ${response.statusCode}');
-  //   }
-  // }
-
-
-
-
-  // /// Fetch route with Graphhopper API
-  // Future<void> _fetchRoute(LatLng start, LatLng end) async {
-  //   final url = Uri.parse(
-  //     'https://graphhopper.com/api/1/route?point=${start.latitude},${start.longitude}&point=${end.latitude},${end.longitude}&vehicle=car&locale=en&key=$apiKey',
-  //   );
-  //   print("url....${url}");
-  //
-  //   final response = await http.get(url);
-  //   print("response.roure...${response.body}");
-  //   if (response.statusCode == 200) {
-  //     final data = json.decode(response.body);
-  //     final encodedPoints = data['paths'][0]['points'];
-  //     PolylinePoints polylinePoints = PolylinePoints();
-  //     List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(encodedPoints);
-  //
-  //     setState(() {
-  //       routePoints = decodedPoints.map((point) => LatLng(point.latitude, point.longitude)).toList();
-  //     });
-  //   } else {
-  //     print('Failed to fetch route');
-  //   }
-  // }
-
-  /// route with graphhoper
-  // Future<void> _fetchRoute(LatLng start, LatLng end) async {
-  //   // foot, car, bike
-  //   String vehicle = "foot";
-  //   final url = Uri.parse(
-  //     'https://graphhopper.com/api/1/route?point=${start.latitude},${start.longitude}&point=${end.latitude},${end.longitude}&vehicle=$vehicle&locale=en&key=$apiKey',
-  //   );
-  //
-  //   print("Route URL: $url");
-  //
-  //   final response = await http.get(url);
-  //   print("Route response: ${response.body}");
-  //
-  //   if (response.statusCode == 200) {
-  //     final data = json.decode(response.body);
-  //     final encodedPoints = data['paths'][0]['points']; // Get the encoded polyline points
-  //     print("encodedPoints....${encodedPoints}");
-  //
-  //     // Decode the encoded polyline
-  //     PolylinePoints polylinePoints = PolylinePoints();
-  //     List<PointLatLng> decodedPoints = polylinePoints.decodePolyline(encodedPoints);
-  //
-  //     setState(() {
-  //       routePoints = decodedPoints.map((point) => LatLng(point.latitude, point.longitude)).toList();
-  //     });
-  //   } else {
-  //     print('Failed to fetch route');
-  //   }
-  // }
-
-
-
-  // Future<void> _fetchRoute(LatLng start, LatLng end) async {
-  //   // Choose vehicle type: foot, car, bike
-  //   String vehicle = "foot";
-  //   int maxDistance = 10; // Adjust this distance for more/less detailed route points
-  //
-  //   final url = Uri.parse(
-  //     'https://graphhopper.com/api/1/route?point=${start.latitude},${start.longitude}&point=${end.latitude},${end.longitude}&vehicle=$vehicle&locale=en&points_encoded=false&elevation=false&way_point_max_distance=$maxDistance&key=$apiKey',
-  //   );
-  //
-  //   print("Route URL: $url");
-  //
-  //   final response = await http.get(url);
-  //   print("Route response: ${response.body}");
-  //
-  //   if (response.statusCode == 200) {
-  //     final data = json.decode(response.body);
-  //     final points = data['paths'][0]['points']['coordinates']; // Access unencoded coordinates
-  //
-  //     // Convert coordinates to a list of LatLng points
-  //     setState(() {
-  //       routePoints = points.map<LatLng>((point) => LatLng(point[1], point[0])).toList();
-  //     });
-  //   } else {
-  //     print('Failed to fetch route');
-  //   }
-  // }
-
-
-
-
-
-
-  // //
-  // Future<void> _fetchRoute(LatLng start, LatLng end) async {
-  //   // Choose vehicle type: foot, car, bike
-  //   String vehicle = "foot";
-  //   int maxDistance = 10; // Adjust this distance for more/less detailed route points
-  //
-  //   var value = 'point=${start.latitude},${start.longitude}&point=${end.latitude},${end.longitude}&'
-  //       'profile=$vehicle&locale=de&calc_points=true&'
-  //       'instructions=true&points_encoded=false&'
-  //       'elevation=false&debug=false&'
-  //       'optimize=false&algorithm=alternative_route&'
-  //       'alternative_route.max_paths=3'
-  //       '&alternative_route.max_weight_factor=1.4&'
-  //       'alternative_route.max_share_factor=0.6';
-  //
-  //   final url = Uri.parse(
-  //       'https://graphhopper.com/api/1/route?$value&key=$apiKey'
-  //   );
-  //   print("Route URL: $url");
-  //
-  //   final response = await http.get(url);
-  //   print("Route response: ${response.body}");
-  //
-  //   if (response.statusCode == 200) {
-  //
-  //     final data = json.decode(response.body);
-  //     final points = data['paths'][0]['points']['coordinates'];
-  //
-  //     // Convert coordinates to a list of LatLng points
-  //     setState(() {
-  //       routePoints = points.map<LatLng>((point) => LatLng(point[1], point[0])).toList();
-  //     });
-  //
-  //   } else {
-  //     print('Failed to fetch route');
-  //   }
-  // }
 
 
   var logger = Logger(
@@ -477,13 +160,22 @@ class _MapScreenState extends State<MapScreen> {
     //  logLargeString(response.body.toString());
       print("");
      // logger.d("Logger is working!..${data['routes'][0]['geometry']}");
-      routePoints = [];
+      List<LatLng> rawRoutePoints = [];
 
       setState(() {
-        routePoints = coordinates.map<LatLng>((point) {
+        rawRoutePoints = coordinates.map<LatLng>((point) {
           return LatLng(point[1], point[0]);
         }).toList();
       });
+
+     await recalculateRoutePoints(rawRoutePoints);
+
+      // setState(() {
+      //   routePoints = coordinates.map<LatLng>((point) {
+      //     return LatLng(point[1], point[0]);
+      //   }).toList();
+      // });
+
     } else {
       print('Failed to fetch route');
     }
@@ -507,7 +199,7 @@ class _MapScreenState extends State<MapScreen> {
     late LocationSettings locationSettings;
     locationSettings = AndroidSettings(
       accuracy: LocationAccuracy.high,
-      distanceFilter: 10,
+      distanceFilter: 0,
       // forceLocationManager: true,
       intervalDuration: const Duration(seconds: 1),
       // foregroundNotificationConfig: const ForegroundNotificationConfig(
@@ -531,6 +223,7 @@ class _MapScreenState extends State<MapScreen> {
         // }
 
         print("routePoints...len...${routePoints.length}");
+        //print("routes....${routePoints}");
 
         for(int index = 0; index<routePoints.length-1; index++){
           print("distance..lo..$index..${_distanceBetween(routePoints[index], routePoints[index+1])}");
@@ -541,16 +234,24 @@ class _MapScreenState extends State<MapScreen> {
        // Remove points that have been passed
 
         if (routePoints.isNotEmpty) {
+          LatLng removingPoint = currentLocation;
+          bool isRemoved = false;
           routePoints.removeWhere((point){
             double value = _distanceBetween(currentLocation, point);
+            removingPoint = point;
             ///print("value.....re....$value");
-            return value < 50;
+            isRemoved = value < 15;
+            return isRemoved;
           }); // Adjust threshold as needed
           // Update startLocation to the first remaining point in routePoints if there are any
-          if (routePoints.isNotEmpty) {
+          if (routePoints.isNotEmpty && isRemoved) {
             startLocation = routePoints.first;
-            mapController.move(startLocation!, zoomValue);
-            return;
+
+          //  _positionTween = Tween<LatLng>(begin: currentLocation, end: startLocation);
+            _positionTween = LatLngTweenExtent(begin: removingPoint, end: startLocation!);
+            _positionAnimation = _positionTween.animate(_animationController);
+            _animationController.forward(from: 0.0);
+           // mapController.move(startLocation!, zoomValue);
           }
           // if(routePoints.isNotEmpty){
           //   LatLng lastValue = routePoints.last;
@@ -630,27 +331,19 @@ class _MapScreenState extends State<MapScreen> {
 
   //https://nominatim.openstreetmap.org/reverse?
 
-  bool isStartingSearch = false;
-  bool setOnMap = false;
+
   ReverseSearchModel? reverseSearchModel;
 
   // Function to search and convert address to coordinates using Nominatim
   Future<void> _reverseSearchLocation() async {
-    setState(() {
-      if (isStartingSearch) {
-        startLocation = LatLng(latLng!.latitude, latLng!.longitude);
-        //print("staar..location...insearch.....${startLocation}");
-      } else {
-        endLocation = LatLng(latLng!.latitude, latLng!.longitude);
-       // print("endLocation..location...insearch.....${endLocation}");
-      }
-    });
+
     final url = Uri.parse('https://nominatim.openstreetmap.org/reverse?lat=${latLng!.latitude}&lon=${latLng!.longitude}&format=json');
     print("serach..url....${url}");
     final response = await http.get(url);
     final data = json.decode(response.body);
  //   print("serach..response....${response.body}");
     reverseSearchModel = ReverseSearchModel.fromJson(data);
+    await updateAddressDuringSwapping(reverseSearchModel!.displayName.toString());
     logLargeString(reverseSearchModel.toString());
     print(".....................");
     if (response.statusCode == 200) {
@@ -668,7 +361,11 @@ class _MapScreenState extends State<MapScreen> {
 
   // Function to handle the Start button click
   Future<void> _onStartButtonClick() async {
-    if (startLocation != null && endLocation != null) {
+    if ((startLocation != null || currentLocation != null) && endLocation != null) {
+      startLocation = startLocation ?? currentLocation;
+      setState(() {
+        setOnMap = null;
+      });
       await _fetchRoute(startLocation!, endLocation!);
      // await _fetchRoute();
       _startLocationTracking();
@@ -682,33 +379,54 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     //_getUserLocation();
+    FlutterCompass.events?.listen((CompassEvent event) {
+      setState(() {
+        heading = event.heading;
+      });
+    });
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500), // Smooth transition duration
+    );
+
+    _animationController.addListener(() {
+      setState(() {
+        // Update the marker position with interpolated position
+        startLocation = _positionAnimation?.value;
+        if (startLocation != null) {
+          mapController.move(startLocation!, zoomValue); // Move map to the new position
+        }
+      });
+    });
+
   }
 
   @override
   void dispose() {
-    positionStream?.cancel(); // Stop tracking when the widget is disposed
+    positionStream?.cancel();
     super.dispose();
   }
-
-  // // Get user's initial location
-  // Future<void> _getUserLocation() async {
-  //   Position position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-  //   setState(() {
-  //     startLocation = LatLng(position.latitude, position.longitude);
-  //   });
-  // }
-
 
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Map with Routing & Live Tracking"),
+        title: Text("Map"),
         actions: [
           TextButton(onPressed: (){
             _getUserLocation();
-          }, child: Text("mylocation"))
+          }, child: Text("my loca")),
+          TextButton(onPressed: (){
+            setState(() {
+              setOnMap = true;
+            });
+          }, child: Text("set on")),
+          TextButton(
+              onPressed: (){
+            endTrack();
+          }, child: Text("end")),
         ],
       ),
       body: Column(
@@ -728,6 +446,11 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                         onChanged: (value) {
                           //if (value.isNotEmpty) _searchLocation(value, true);
+                        },
+                        onTap: (){
+                          setState(() {
+                            isStartingSearch = true;
+                          });
                         },
                       ),
                     ),
@@ -749,6 +472,11 @@ class _MapScreenState extends State<MapScreen> {
                         ),
                         onChanged: (value) {
 
+                        },
+                        onTap: (){
+                          setState(() {
+                            isStartingSearch = false;
+                          });
                         },
                       ),
                     ),
@@ -789,24 +517,27 @@ class _MapScreenState extends State<MapScreen> {
                      // print("mapCamera....${mapCamera.visibleBounds}");
 
                       //latLng = mapController.camera.pointToLatLng(Point(_getPointX(), pointY));
-                     // updatePoint();
-
+                      if(setOnMap == true){
+                        updatePoint();
+                      }
                     },
                     onPointerCancel: ( value, latLong){
                       print("value...${value}");
                     },
-                    onMapEvent: (mapEvent){
+                    onMapEvent: (mapEvent)async{
                      // print("mapEvent.....${mapEvent.camera}");
                     //  print("mapEvent.....${mapEvent.hashCode}....${mapEvent.source}....${mapEvent.runtimeType}......");
 
-                      if(MapEventSource.dragEnd == mapEvent.source){
-                        setOnMap = false;
-                     //   _reverseSearchLocation();
+                      if(MapEventSource.dragEnd == mapEvent.source && setOnMap == true){
+                        //setOnMap = false;
+
+                        await updateLocationDuringSwapping();
+                        await _reverseSearchLocation();
                         setState(() {
 
                         });
                       }else if(MapEventSource.onDrag == mapEvent.source){
-                        setOnMap = true;
+                       // setOnMap = true;
                         setState(() {
 
                         });
@@ -821,6 +552,25 @@ class _MapScreenState extends State<MapScreen> {
                     //   subdomains: ['a', 'b', 'c'],
                     //
                     // ),
+                    if (currentLocation != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            width: 80.0,
+                            height: 80.0,
+                            point: currentLocation!,
+                            rotate: true, // Enable rotation
+                            child: Transform.rotate(
+                              angle: (heading ?? 0) * (3.14159 / 180),
+                              child: const Icon(
+                                Icons.navigation,
+                                color: Colors.green,
+                                size: 30,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     if (startLocation != null)
                       MarkerLayer(
                         markers: [
@@ -828,10 +578,11 @@ class _MapScreenState extends State<MapScreen> {
                             width: 80.0,
                             height: 80.0,
                             point: startLocation!,
+                            rotate: true,
                             child: Icon(
-                              Icons.location_on,
+                              currentLocation == startLocation ? Icons.navigation :  Icons.location_on,
                               color: Colors.blue,
-                              size: 40,
+                              size: 30,
                             ),
                           ),
                         ],
@@ -846,7 +597,7 @@ class _MapScreenState extends State<MapScreen> {
                             child: Icon(
                               Icons.location_on,
                               color: Colors.red,
-                              size: 40,
+                              size: 30,
                             ),
                           ),
                         ],
@@ -862,33 +613,17 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ],
                 ),
-                if(setOnMap)Positioned(
+                if(setOnMap == true)Positioned(
                   top: pointY - pointSize / 2,
                   left: _getPointX() - pointSize / 2,
-                  child: const IgnorePointer(
+                  child:  IgnorePointer(
                     child: Icon(
-                      Icons.location_pin,
+                       Icons.location_on,
                       size: pointSize*0.5,
-                      color: Colors.black,
+                      color: isStartingSearch ? Colors.blue : Colors.red,
                     ),
                   ),
                 ),
-                // Positioned(
-                //   top: pointY + pointSize / 2 + 6,
-                //   left: 0,
-                //   right: 0,
-                //   child: IgnorePointer(
-                //     child: Text(
-                //       '(${latLng?.latitude.toStringAsFixed(3)},${latLng?.longitude.toStringAsFixed(3)})',
-                //       textAlign: TextAlign.center,
-                //       style: const TextStyle(
-                //         color: Colors.black,
-                //         fontWeight: FontWeight.bold,
-                //         fontSize: 14,
-                //       ),
-                //     ),
-                //   ),
-                // ),
               ],
             ),
           ),
@@ -916,5 +651,87 @@ class _MapScreenState extends State<MapScreen> {
 
   double _getPointX() =>
       MediaQuery.sizeOf(context).width / 2;
+
+  Future<void> updateLocationDuringSwapping()async{
+    setState(() {
+      if (isStartingSearch) {
+        startLocation = LatLng(latLng!.latitude, latLng!.longitude);
+        //print("staar..location...insearch.....${startLocation}");
+      } else if(!isStartingSearch){
+        endLocation = LatLng(latLng!.latitude, latLng!.longitude);
+        // print("endLocation..location...insearch.....${endLocation}");
+      }
+    });
+  }
+
+  Future<void> updateAddressDuringSwapping(String address)async{
+    setState(() {
+      if (isStartingSearch) {
+        startController.text = address;
+      } else if(!isStartingSearch){
+        endController.text = address;
+      }
+    });
+  }
+
+  Future<void> endTrack()async{
+    currentLocation = null;
+    startLocation = null;
+    endLocation = null;
+    positionStream?.cancel();
+    routePoints = [];
+    isStartingSearch = false;
+    setOnMap = false;
+    startController.clear();
+    endController.clear();
+    setState(() {
+
+    });
+  }
+
+
+  /// Interpolate a point between two LatLng points at a specified fraction
+  LatLng interpolatePoint(LatLng start, LatLng end, double fraction) {
+    final lat = start.latitude + (end.latitude - start.latitude) * fraction;
+    final lng = start.longitude + (end.longitude - start.longitude) * fraction;
+    return LatLng(lat, lng);
+  }
+
+  /// Calculate the distance in meters between two LatLng points
+  double calculateDistance(LatLng start, LatLng end) {
+    final distance = Distance();
+    return distance(start, end);
+  }
+
+  Future<void> recalculateRoutePoints(List<LatLng> rawRoutePoints)async{
+    List<LatLng> interpolatedRoutePoints = [];
+    double targetDistance = 5.0; // Distance in meters between points
+
+    for (int indexI = 0; indexI < rawRoutePoints.length - 1; indexI++) {
+      LatLng start = rawRoutePoints[indexI];
+      LatLng end = rawRoutePoints[indexI + 1];
+      // Add the start point
+      interpolatedRoutePoints.add(start);
+
+      double distance = calculateDistance(start, end);
+
+      if (distance > targetDistance) {
+        int segments = (distance / targetDistance).floor();
+        for (int indexJ = 1; indexJ < segments; indexJ++) {
+          double fraction = indexJ * targetDistance / distance;
+          interpolatedRoutePoints.add(interpolatePoint(start, end, fraction));
+        }
+      }
+    }
+
+
+    // Add the final point which was not included in loop
+    interpolatedRoutePoints.add(rawRoutePoints.last);
+    setState(() {
+      routePoints = interpolatedRoutePoints;
+    });
+
+  }
+
 
 }

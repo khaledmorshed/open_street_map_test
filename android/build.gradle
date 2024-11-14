@@ -9,9 +9,52 @@ rootProject.buildDir = "../build"
 subprojects {
     project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
+//subprojects {
+//    project.evaluationDependsOn(":app")
+//}
+
 subprojects {
-    project.evaluationDependsOn(":app")
+    //project.evaluationDependsOn(":app")
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+
+    afterEvaluate {
+        if (it.hasProperty('android')) {
+            // Check whether the android.namespace property is set.
+            // If not, read the package name from the app's manifest file and set it as the namespace.
+            if (it.android.namespace == null) {
+                def manifest = new XmlSlurper().parse(file(it.android.sourceSets.main.manifest.srcFile))
+                def packageName = manifest.@package.text()
+                println("Setting ${packageName} as android namespace")
+                android.namespace = packageName
+            }
+
+            // Set both the sourceCompatibility and targetCompatibility to Java 17,
+            // ensuring that both Java and Kotlin code are compiled with the correct target JVM version.
+            def javaVersion = JavaVersion.VERSION_17
+            android {
+                def androidApiVersion = 34
+                compileSdkVersion androidApiVersion
+                defaultConfig {
+                    targetSdkVersion androidApiVersion
+                }
+                compileOptions {
+                    sourceCompatibility javaVersion
+                    targetCompatibility javaVersion
+                }
+            }
+
+            // Ensure that all subprojects in the build follow the same Java version
+            // and build directory configurations. Evaluate settings after all configurations
+            // have been applied to make sure everything is in sync.
+            tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+                kotlinOptions {
+                    jvmTarget = javaVersion.toString()
+                }
+            }
+        }
+    }
 }
+
 
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
